@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP #-}
 #ifndef NO_GENERICS
 {-# LANGUAGE DefaultSignatures, FlexibleContexts, TypeOperators #-}
+{-# LANGUAGE FlexibleInstances, KindSignatures, ScopedTypeVariables #-}
 #endif
 module Test.QuickCheck.Arbitrary
   (
@@ -44,6 +45,7 @@ module Test.QuickCheck.Arbitrary
 --------------------------------------------------------------------------
 -- imports
 
+import Control.Applicative
 import System.Random(Random)
 import Test.QuickCheck.Gen
 import Test.QuickCheck.Gen.Unsafe
@@ -111,7 +113,12 @@ import Data.Typeable
 class Arbitrary a where
   -- | A generator for values of the given type.
   arbitrary :: Gen a
+#ifndef NO_GENERICS
+  default arbitrary :: (Generic a, GArbitrary (Rep a)) => Gen a
+  arbitrary = to <$> gArbitrary
+#else
   arbitrary = error "no default generator"
+#endif
 
   -- | Produces a (possibly) empty list of all the possible
   -- immediate shrinks of the given value. The default implementation
@@ -182,6 +189,69 @@ class Arbitrary a where
   shrink _ = []
 
 #ifndef NO_GENERICS
+
+
+newtype Tagged2 (s :: * -> *) b = Tagged2 {unTagged2 :: b}
+
+
+-- | Calculates the size of a sum type (numbers of alternatives).
+--
+-- Example: `data X = A | B | C` has `sumSize` 3.
+class SumSize f where
+  sumSize :: Tagged2 f Int
+
+-- Recursive case: Sum split `(:+:)`..
+instance (SumSize a, SumSize b) => SumSize (a :+: b) where
+  sumSize = Tagged2 $ unTagged2 (sumSize :: Tagged2 a Int) +
+                          unTagged2 (sumSize :: Tagged2 b Int)
+  {-# INLINE sumSize #-}
+
+-- Constructor base case.
+instance SumSize (C1 s a) where
+  sumSize = Tagged2 1
+  {-# INLINE sumSize #-}
+
+
+class GArbitrary f where
+  gArbitrary :: Gen (f a)
+
+instance GArbitrary U1 where
+  gArbitrary = return U1
+
+instance (GArbitrary a, GArbitrary b) => GArbitrary (a :*: b) where
+  gArbitrary = (:*:) <$> gArbitrary <*> gArbitrary
+
+instance ( GArbitrary a, GArbitrary b
+         , SumSize    a, SumSize    b ) => GArbitrary (a :+: b) where
+  gArbitrary = do
+    -- We cannot simply choose with equal probability between the left and
+    -- right part of the `a :+: b` (e.g. with `choose (False, True)`),
+    -- because GHC.Generics does not guarantee :+: to be balanced; even if it
+    -- did, it could only do so for sum types with 2^n alternatives.
+    -- If we did that and got a data structure of form `(a :+: (b :+: c))`,
+    -- then a would be chosen just as often as b and c together.
+    -- So we first have to compute the number of alternatives using `sumSize`,
+    -- and then uniformly sample a number in the corresponding range.
+    -- TODO: The code below could be optimised since the `choose` has to be
+    --       done only once for the whole sum type, not recursively at each
+    --       :+: split. However, this will only give us a 2x speed-up because
+    --       while GHC doesn't guarantee any nesting strategy for :+:, it does
+    --       in practice create binary trees.
+    let sizeL = unTagged2 (sumSize :: Tagged2 a Int)
+        sizeR = unTagged2 (sumSize :: Tagged2 b Int)
+        size = sizeL + sizeR
+    x <- choose (1, size)
+    if x <= sizeL
+      then L1 <$> gArbitrary
+      else R1 <$> gArbitrary
+
+instance GArbitrary a => GArbitrary (M1 i c a) where
+  gArbitrary = M1 <$> gArbitrary
+
+instance Arbitrary a => GArbitrary (K1 i a) where
+  gArbitrary = K1 <$> arbitrary
+
+
 -- | Shrink a term to any of its immediate subterms,
 -- and also recursively shrink all subterms.
 genericShrink :: (Generic a, Typeable a, RecursivelyShrink (Rep a), Subterms (Rep a)) => a -> [a]

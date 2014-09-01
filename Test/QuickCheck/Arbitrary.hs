@@ -88,6 +88,17 @@ import Data.List
   , nub
   )
 
+import Data.Traversable
+  ( traverse
+  )
+
+import Control.Applicative
+  ( Applicative(..)
+  , (<$>)
+  , liftA2
+  , liftA3
+  )
+
 import Control.Monad
   ( liftM
   , liftM2
@@ -105,6 +116,27 @@ import Data.Typeable
 #endif
 
 --------------------------------------------------------------------------
+-- ** class Shrink
+
+-- | Captures a value together with its shrunk variants.
+data Shrink a = Shrink { sOriginal :: a
+                       , fromShrink :: [a]
+                       }
+  deriving (Eq, Ord, Show)
+
+instance Functor Shrink where
+    fmap f (Shrink x xs) = Shrink (f x) (map f xs)
+
+instance Applicative Shrink where
+    pure x = Shrink x []
+    (Shrink f fs) <*> (Shrink x xs) =
+        Shrink (f x) (map ($ x) fs ++ map f xs)
+
+-- | Adds more shrunk values to the current ones.
+(>.) :: [a] -> Shrink a -> Shrink a
+ys >. Shrink x xs = Shrink x (ys ++ xs)
+infixr 2 >.
+
 -- ** class Arbitrary
 
 -- | Random generation and shrinking of values.
@@ -179,7 +211,28 @@ class Arbitrary a where
   -- after deriving @Generic@ and @Typeable@ for your type. However, if your data type has any
   -- special invariants, you will need to check that 'genericShrink' can't break those invariants.
   shrink :: a -> [a]
-  shrink _ = []
+  shrink = fromShrink . shrinkA
+
+  -- ...
+  --
+  -- For example, suppose we have the following implementation of binary trees:
+  --
+  -- > data Tree a = Nil | Branch a (Tree a) (Tree a)
+  --
+  -- We can then define 'shrinkA' as follows:
+  --
+  -- > shrink (Branch x l r) =
+  -- >   -- shrink Branch to Nil
+  -- >   [Nil] ++
+  -- >   -- shrink to subterms
+  -- >   [l, r] >.
+  -- >   -- recursively shrink subterms
+  -- >   Branch <$> shrinkA x <*> shrinkA l <*> shrinkA r
+  -- > shrink x = pure x
+  --
+  -- ...
+  shrinkA :: a -> Shrink a
+  shrinkA = pure
 
 #ifndef NO_GENERICS
 -- | Shrink a term to any of its immediate subterms,
@@ -263,32 +316,28 @@ instance Arbitrary Ordering where
 instance Arbitrary a => Arbitrary (Maybe a) where
   arbitrary = frequency [(1, return Nothing), (3, liftM Just arbitrary)]
 
-  shrink (Just x) = Nothing : [ Just x' | x' <- shrink x ]
-  shrink _        = []
+  shrinkA (Just x) = [Nothing] >. Just <$> shrinkA x
+  shrinkA v        = pure v
 
 instance (Arbitrary a, Arbitrary b) => Arbitrary (Either a b) where
   arbitrary = oneof [liftM Left arbitrary, liftM Right arbitrary]
 
-  shrink (Left x)  = [ Left  x' | x' <- shrink x ]
-  shrink (Right y) = [ Right y' | y' <- shrink y ]
+  shrinkA (Left x)  = Left  <$> shrinkA x
+  shrinkA (Right y) = Right <$> shrinkA y
 
 instance Arbitrary a => Arbitrary [a] where
   arbitrary = sized $ \n ->
     do k <- choose (0,n)
        sequence [ arbitrary | _ <- [1..k] ]
 
-  shrink xs = shrinkList shrink xs
+  shrinkA xs = shrinkList shrinkA xs
 
 -- | Shrink a list of values given a shrinking function for individual values.
-shrinkList :: (a -> [a]) -> [a] -> [[a]]
+shrinkList :: (a -> Shrink a) -> [a] -> Shrink [a]
 shrinkList shr xs = concat [ removes k n xs | k <- takeWhile (>0) (iterate (`div`2) n) ]
-                 ++ shrinkOne xs
+                 >. traverse shr xs
  where
   n = length xs
-
-  shrinkOne []     = []
-  shrinkOne (x:xs) = [ x':xs | x'  <- shr x ]
-                  ++ [ x:xs' | xs' <- shrinkOne xs ]
 
   removes k n xs
     | k > n     = []
@@ -312,8 +361,7 @@ instance (Integral a, Arbitrary a) => Arbitrary (Ratio a) where
 
 instance (RealFloat a, Arbitrary a) => Arbitrary (Complex a) where
   arbitrary = liftM2 (:+) arbitrary arbitrary
-  shrink (x :+ y) = [ x' :+ y | x' <- shrink x ] ++
-                    [ x :+ y' | y' <- shrink y ]
+  shrinkA (x :+ y) = liftA2 (:+) (shrinkA x) (shrinkA y)
 
 #ifndef NO_FIXED
 instance HasResolution a => Arbitrary (Fixed a) where
@@ -326,18 +374,14 @@ instance (Arbitrary a, Arbitrary b)
  where
   arbitrary = liftM2 (,) arbitrary arbitrary
 
-  shrink (x, y) =
-       [ (x', y) | x' <- shrink x ]
-    ++ [ (x, y') | y' <- shrink y ]
+  shrinkA (x, y) = liftA2 (,) (shrinkA x) (shrinkA y)
 
 instance (Arbitrary a, Arbitrary b, Arbitrary c)
       => Arbitrary (a,b,c)
  where
   arbitrary = liftM3 (,,) arbitrary arbitrary arbitrary
 
-  shrink (x, y, z) =
-    [ (x', y', z')
-    | (x', (y', z')) <- shrink (x, (y, z)) ]
+  shrinkA (x, y, z) = liftA3 (,,) (shrinkA x) (shrinkA y) (shrinkA z)
 
 instance (Arbitrary a, Arbitrary b, Arbitrary c, Arbitrary d)
       => Arbitrary (a,b,c,d)

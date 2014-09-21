@@ -512,9 +512,9 @@ instance GSubterms U1 a where
 instance (GSubtermsIncl f a, GSubtermsIncl g a) => GSubterms (f :*: g) a where
   gSubterms (l :*: r) = gSubtermsIncl l ++ gSubtermsIncl r
 
-instance (GSubterms f a, GSubterms g a) => GSubterms (f :+: g) a where
-  gSubterms (L1 x) = gSubterms x
-  gSubterms (R1 x) = gSubterms x
+instance (GSubtermsIncl f a, GSubtermsIncl g a) => GSubterms (f :+: g) a where
+  gSubterms (L1 x) = gSubtermsIncl x
+  gSubterms (R1 x) = gSubtermsIncl x
 
 instance GSubterms f a => GSubterms (M1 i c f) a where
   gSubterms (M1 x) = gSubterms x

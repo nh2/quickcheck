@@ -25,14 +25,7 @@ module Test.QuickCheck.Arbitrary
 #ifndef NO_GENERICS
   , genericArbitrary   -- :: (Generic a, GArbitrary (Rep a)) => Gen a
   , genericShrink      -- :: (Generic a, Typeable a, RecursivelyShrink (Rep a), Subterms (Rep a)) => a -> [a]
-  , genericShrinkOrig
-  , subtermsOrig
-  , genericShrinkOrigFixed
-  , subtermsOrigFixed
-  , genericShrinkBitonic
-  , genericShrinkBitonicFixed
   , subterms           -- :: (Generic a, Subterms (Rep a)) => a -> [a]
-  , subtermsIncl
   , recursivelyShrink  -- :: (Generic a, RecursivelyShrink (Rep a)) => a -> [a]
 #endif
   , shrinkNothing            -- :: a -> [a]
@@ -326,21 +319,6 @@ genericShrink :: (Generic a, Typeable a, Arbitrary a, RecursivelyShrink (Rep a),
 genericShrink x = subterms x ++ recursivelyShrink x
 
 
--- Problem description
---
--- Problem: the original genericShrink (genericShrinkOrig) gave: genericShrinkOrig (0::Int) == [0]; that's bad
---       The reason is that subtermsOrig (0::Int) == [0], the 0 should be a subterm
--- Also: Is it correct to allow users to call `genericShrink`?
---       They could accidentally call it on 1::Int, which would be wrong
---       since 1 has neither subterms nor recursively shrinkable subterms.
--- Idea: The 1->0 shrink is a
---         "Type-specific shrinking such as replacing a constructor by a simpler constructor"
---       and thus not covered by subterms or grecursivelyShrink
--- Update: I think I fixed this now with my GSubterms
-
-
--- `recursivelyShrink` is and has always been correct.
-
 -- | Recursively shrink all immediate subterms.
 recursivelyShrink :: (Generic a, RecursivelyShrink (Rep a)) => a -> [a]
 recursivelyShrink = map to . grecursivelyShrink . from
@@ -368,135 +346,6 @@ instance RecursivelyShrink U1 where
 
 -- TODO check if we should work on V1 as well.
 
-
--- The following is wrong because genericShrinkOrig (0::Int) == [0].
-
-genericShrinkOrig :: (Generic a, Typeable a, RecursivelyShrink (Rep a), SubtermsOrig (Rep a)) => a -> [a]
-genericShrinkOrig x = subtermsOrig x ++ recursivelyShrink x
-
--- | All immediate subterms of a term.
-subtermsOrig :: (Generic a, Typeable a, SubtermsOrig (Rep a)) => a -> [a]
-subtermsOrig = gsubtermsOrig . from
-
-class SubtermsOrig f where
-  gsubtermsOrig :: Typeable b => f a -> [b]
-
-instance (SubtermsOrig f, SubtermsOrig g) => SubtermsOrig (f :*: g) where
-  gsubtermsOrig (x :*: y) =
-    gsubtermsOrig x ++ gsubtermsOrig y
-
-instance (SubtermsOrig f, SubtermsOrig g) => SubtermsOrig (f :+: g) where
-  gsubtermsOrig (L1 x) = gsubtermsOrig x
-  gsubtermsOrig (R1 x) = gsubtermsOrig x
-
-instance SubtermsOrig f => SubtermsOrig (M1 i c f) where
-  gsubtermsOrig (M1 x) = gsubtermsOrig x
-
-instance Typeable a => SubtermsOrig (K1 i a) where
-  gsubtermsOrig (K1 x) =
-    case cast x of
-      Nothing -> []
-      Just y -> [y] -- Bug: this will shrink 0 to [0]
-
-instance SubtermsOrig U1 where
-  gsubtermsOrig U1 = []
-
-
-
--- Same as genericShrinkOrig, but replaced the K1 instance from `[y]` to `shrink y`.
--- The following is wrong because genericShrinkOrigFixed [0::Int] == [] (should be [[]])
-
-genericShrinkOrigFixed :: (Arbitrary a, Generic a, Typeable a, RecursivelyShrink (Rep a), SubtermsOrigFixed (Rep a)) => a -> [a]
-genericShrinkOrigFixed x = subtermsOrigFixed x ++ recursivelyShrink x
-
--- | All immediate subterms of a term.
-subtermsOrigFixed :: (Arbitrary a, Generic a, Typeable a, SubtermsOrigFixed (Rep a)) => a -> [a]
-subtermsOrigFixed = gsubtermsOrigFixed . from
-
-class SubtermsOrigFixed f where
-  gsubtermsOrigFixed :: (Arbitrary b, Typeable b) => f a -> [b]
-
-instance (SubtermsOrigFixed f, SubtermsOrigFixed g) => SubtermsOrigFixed (f :*: g) where
-  gsubtermsOrigFixed (x :*: y) =
-    gsubtermsOrigFixed x ++ gsubtermsOrigFixed y
-
-instance (SubtermsOrigFixed f, SubtermsOrigFixed g) => SubtermsOrigFixed (f :+: g) where
-  gsubtermsOrigFixed (L1 x) = gsubtermsOrigFixed x
-  gsubtermsOrigFixed (R1 x) = gsubtermsOrigFixed x
-
-instance SubtermsOrigFixed f => SubtermsOrigFixed (M1 i c f) where
-  gsubtermsOrigFixed (M1 x) = gsubtermsOrigFixed x
-
-instance Typeable a => SubtermsOrigFixed (K1 i a) where
-  gsubtermsOrigFixed (K1 x) =
-    case cast x of
-      Nothing -> []
-      Just y -> shrink y
-
-instance SubtermsOrigFixed U1 where
-  gsubtermsOrigFixed U1 = []
-
-
-
--- The following is equivalent to subtermsOrig, just that it doesn't need Typeable.
-
-genericShrinkBitonic :: (Generic a, GShrinkBitonic (Rep a) a) => a -> [a]
-genericShrinkBitonic = gShrinkBitonic . from
-
-class GShrinkBitonic f b where
-  gShrinkBitonic :: f a -> [b]
-
-instance GShrinkBitonic U1 a where
-  gShrinkBitonic U1 = []
-
-instance (GShrinkBitonic f b, GShrinkBitonic g b) => GShrinkBitonic (f :*: g) b where
-  gShrinkBitonic (l :*: r) = gShrinkBitonic l ++ gShrinkBitonic r
-
-instance (GShrinkBitonic f b, GShrinkBitonic g b) => GShrinkBitonic (f :+: g) b where
-  gShrinkBitonic (L1 x) = gShrinkBitonic x
-  gShrinkBitonic (R1 x) = gShrinkBitonic x
-
-instance GShrinkBitonic f b => GShrinkBitonic (M1 i c f) b where
-  gShrinkBitonic (M1 x) = gShrinkBitonic x
-
-instance GShrinkBitonic (K1 i a) a where
-  gShrinkBitonic (K1 x) = [x] -- Bug: this will shrink 0 to [0]
-
-instance GShrinkBitonic (K1 i a) b where
-  gShrinkBitonic (K1 _) = []
-
-
-
--- This is equivalent to subtermsOrigFixed, just that it doesn't need Typeable.
-
-genericShrinkBitonicFixed :: (Generic a, GShrinkBitonicFixed (Rep a) a) => a -> [a]
-genericShrinkBitonicFixed = gShrinkBitonicFixed . from
-
-class GShrinkBitonicFixed f b where
-  gShrinkBitonicFixed :: f a -> [b]
-
-instance GShrinkBitonicFixed U1 a where
-  gShrinkBitonicFixed U1 = []
-
-instance (GShrinkBitonicFixed f b, GShrinkBitonicFixed g b) => GShrinkBitonicFixed (f :*: g) b where
-  gShrinkBitonicFixed (l :*: r) = gShrinkBitonicFixed l ++ gShrinkBitonicFixed r
-
-instance (GShrinkBitonicFixed f b, GShrinkBitonicFixed g b) => GShrinkBitonicFixed (f :+: g) b where
-  gShrinkBitonicFixed (L1 x) = gShrinkBitonicFixed x
-  gShrinkBitonicFixed (R1 x) = gShrinkBitonicFixed x
-
-instance GShrinkBitonicFixed f b => GShrinkBitonicFixed (M1 i c f) b where
-  gShrinkBitonicFixed (M1 x) = gShrinkBitonicFixed x
-
-instance Arbitrary a => GShrinkBitonicFixed (K1 i a) a where
-  gShrinkBitonicFixed (K1 x) = shrink x
-
-instance GShrinkBitonicFixed (K1 i a) b where
-  gShrinkBitonicFixed (K1 _) = []
-
-
-
--- The following is correct.
 
 -- | All immediate subterms of a term.
 subterms :: (Generic a, Arbitrary a, GSubterms (Rep a) a) => a -> [a]
@@ -531,10 +380,6 @@ instance GSubterms f a => GSubterms (M1 i c f) a where
 instance GSubterms (K1 i a) b where
   gSubterms (K1 _) = []
 
-
--- | subtermsIncl is just for debugging.
-subtermsIncl :: (Generic a, Arbitrary a, GSubtermsIncl (Rep a) a) => a -> [a]
-subtermsIncl = gSubtermsIncl . from
 
 class GSubtermsIncl f a where
   -- | Provides the immediate subterms of a term that are of the same type

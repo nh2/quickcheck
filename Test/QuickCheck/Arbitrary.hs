@@ -503,7 +503,16 @@ subterms :: (Generic a, Arbitrary a, GSubterms (Rep a) a) => a -> [a]
 subterms = gSubterms . from
 
 
-class GSubterms f a where -- TODO see if I can change this to GSubterms f
+class GSubterms f a where
+  -- | Provides the immediate subterms of a term that are of the same type
+  -- as the term itself.
+  --
+  -- Requires a constructor to be stripped off; this means it skips through
+  -- @M1@ wrappers and returns @[]@ on everything that's not `(:*:)` or `(:+:)`.
+  --
+  -- Once a `(:*:)` or `(:+:)` constructor has been reached, this function
+  -- delegates to `gSubtermsIncl` to return the immediately next constructor
+  -- available.
   gSubterms :: f a -> [a]
 
 instance GSubterms U1 a where
@@ -528,6 +537,11 @@ subtermsIncl :: (Generic a, Arbitrary a, GSubtermsIncl (Rep a) a) => a -> [a]
 subtermsIncl = gSubtermsIncl . from
 
 class GSubtermsIncl f a where
+  -- | Provides the immediate subterms of a term that are of the same type
+  -- as the term itself.
+  --
+  -- In contrast to `gSubterms`, this returns the immediate next constructor
+  -- available.
   gSubtermsIncl :: f a -> [a]
 
 instance GSubtermsIncl U1 a where

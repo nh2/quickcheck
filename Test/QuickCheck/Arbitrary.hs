@@ -313,10 +313,6 @@ genericArbitrary :: (Generic a, GArbitrary (Rep a)) => Gen a
 genericArbitrary = to <$> gArbitrary
 
 
--- TODO check if using Rec1 can improve finding the recursive case
---      so that we don't have to use MultiParamTypeClasses and OverlappingInstances
-
-
 -- | Shrink a term to any of its immediate subterms,
 -- and also recursively shrink all subterms.
 genericShrink :: (Generic a, Arbitrary a, RecursivelyShrink (Rep a), GSubterms (Rep a) a) => a -> [a]

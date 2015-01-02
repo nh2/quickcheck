@@ -261,6 +261,10 @@ instance (GArbitrary a) => ChooseSum (C1 s a) where
 class GArbitrary f where
   gArbitrary :: Gen (f a)
 
+instance GArbitrary V1 where
+  -- Following the `Encode' V1` example in GHC.Generics.
+  gArbitrary = undefined
+
 instance GArbitrary U1 where
   gArbitrary = return U1
 
@@ -344,7 +348,9 @@ instance Arbitrary a => RecursivelyShrink (K1 i a) where
 instance RecursivelyShrink U1 where
   grecursivelyShrink U1 = []
 
--- TODO check if we should work on V1 as well.
+instance RecursivelyShrink V1 where
+  -- The empty type can't be shrunk to anything.
+  grecursivelyShrink _ = []
 
 
 -- | All immediate subterms of a term.
@@ -363,6 +369,10 @@ class GSubterms f a where
   -- delegates to `gSubtermsIncl` to return the immediately next constructor
   -- available.
   gSubterms :: f a -> [a]
+
+instance GSubterms V1 a where
+  -- The empty type can't be shrunk to anything.
+  gSubterms _ = []
 
 instance GSubterms U1 a where
   gSubterms U1 = []
@@ -388,6 +398,10 @@ class GSubtermsIncl f a where
   -- In contrast to `gSubterms`, this returns the immediate next constructor
   -- available.
   gSubtermsIncl :: f a -> [a]
+
+instance GSubtermsIncl V1 a where
+  -- The empty type can't be shrunk to anything.
+  gSubtermsIncl _ = []
 
 instance GSubtermsIncl U1 a where
   gSubtermsIncl U1 = []
@@ -759,6 +773,9 @@ genericCoarbitrary = gCoarbitrary . from
 
 class GCoArbitrary f where
   gCoarbitrary :: f a -> Gen b -> Gen b
+
+instance GCoArbitrary V1 where
+  gCoarbitrary _ = id
 
 instance GCoArbitrary U1 where
   gCoarbitrary U1 = id

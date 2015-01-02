@@ -109,7 +109,6 @@ import Data.Word(Word, Word8, Word16, Word32, Word64)
 
 #ifndef NO_GENERICS
 import GHC.Generics
-import Data.Typeable
 #endif
 
 --------------------------------------------------------------------------
@@ -208,7 +207,7 @@ class Arbitrary a where
   -- infinite loop.
   --
   -- If all this leaves you bewildered, you might try @'shrink' = 'genericShrink'@ to begin with,
-  -- after deriving @Generic@ and @Typeable@ for your type. However, if your data type has any
+  -- after deriving @Generic@ for your type. However, if your data type has any
   -- special invariants, you will need to check that 'genericShrink' can't break those invariants.
   shrink :: a -> [a]
   shrink _ = []
@@ -316,7 +315,7 @@ genericArbitrary = to <$> gArbitrary
 
 -- | Shrink a term to any of its immediate subterms,
 -- and also recursively shrink all subterms.
-genericShrink :: (Generic a, Typeable a, Arbitrary a, RecursivelyShrink (Rep a), GSubterms (Rep a) a) => a -> [a]
+genericShrink :: (Generic a, Arbitrary a, RecursivelyShrink (Rep a), GSubterms (Rep a) a) => a -> [a]
 genericShrink x = subterms x ++ recursivelyShrink x
 
 

@@ -24,8 +24,8 @@ module Test.QuickCheck.Arbitrary
   -- ** Helper functions for implementing shrink
 #ifndef NO_GENERICS
   , genericArbitrary   -- :: (Generic a, GArbitrary (Rep a)) => Gen a
-  , genericShrink      -- :: (Generic a, Typeable a, RecursivelyShrink (Rep a), Subterms (Rep a)) => a -> [a]
-  , subterms           -- :: (Generic a, Subterms (Rep a)) => a -> [a]
+  , genericShrink      -- :: (Generic a, Arbitrary a, RecursivelyShrink (Rep a), GSubterms (Rep a) a) => a -> [a]
+  , subterms           -- :: (Generic a, Arbitrary a, GSubterms (Rep a) a) => a -> [a]
   , recursivelyShrink  -- :: (Generic a, RecursivelyShrink (Rep a)) => a -> [a]
   , genericCoarbitrary -- :: (Generic a, GCoArbitrary (Rep a)) => a -> Gen b -> Gen b
 #endif
